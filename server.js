@@ -127,7 +127,7 @@ app.get('/api/notes', async (req, res) => {
     const notes = allRecords.map(item => ({
       id: item.record_id,
       note_id: item.fields.note_id || '',
-      date: item.fields.date || '',
+      date: feishuDateToStr(item.fields.date),
       words: safeParseJSON(item.fields.words),
       phrases: safeParseJSON(item.fields.phrases),
       sentences: safeParseJSON(item.fields.sentences),
@@ -149,10 +149,10 @@ app.post('/api/notes', async (req, res) => {
     const tableId = process.env.FEISHU_NOTES_TABLE_ID;
 
     const { note_id, date, words, phrases, sentences } = req.body;
-
+    const dateStr = date || new Date().toISOString().split('T')[0];
     const fields = {
       note_id: note_id || `N${Date.now()}`,
-      date: date || new Date().toISOString().split('T')[0],
+      date: strToFeishuDate(dateStr),
       words: JSON.stringify(words || []),
       phrases: JSON.stringify(phrases || []),
       sentences: JSON.stringify(sentences || [])
@@ -173,7 +173,7 @@ app.post('/api/notes', async (req, res) => {
 
     // 自动创建复习计划（失败不影响笔记保存）
     try {
-      await createReviewSchedule(token, fields.note_id, fields.date);
+      await createReviewSchedule(token, fields.note_id, dateStr);
     } catch (schedErr) {
       console.warn('创建复习计划失败（不影响笔记保存）:', schedErr.response?.data || schedErr.message);
     }
@@ -480,6 +480,17 @@ function addDays(dateStr, days) {
   return d.toISOString().split('T')[0];
 }
 
+function feishuDateToStr(val) {
+  if (!val) return '';
+  if (typeof val === 'number') return new Date(val).toISOString().split('T')[0];
+  return String(val);
+}
+
+function strToFeishuDate(dateStr) {
+  // 飞书日期字段需要毫秒时间戳
+  return new Date(dateStr + 'T00:00:00+08:00').getTime();
+}
+
 async function createReviewSchedule(token, noteId, dateStr) {
   const appToken = process.env.FEISHU_BASE_APP_TOKEN;
   const tableId = process.env.FEISHU_REVIEW_TABLE_ID;
@@ -489,7 +500,7 @@ async function createReviewSchedule(token, noteId, dateStr) {
     fields: {
       note_id: noteId,
       day_offset: d,
-      scheduled_date: addDays(dateStr, d),
+      scheduled_date: strToFeishuDate(addDays(dateStr, d)),
       completed: false,
       result: ''
     }
