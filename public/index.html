@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>英语笔记复习助手</title>
+  <meta name="description" content="基于飞书存储和 DeepSeek AI 的英语学习笔记复习工具，支持图片 OCR、闪卡复习和艾宾浩斯曲线调度。" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- 顶部导航 -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">📚</span>
+        <span class="logo-text">英语复习助手</span>
+      </div>
+      <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="review" id="tab-review">
+          <span class="tab-icon">🔁</span>
+          <span>今日复习</span>
+          <span class="badge" id="review-badge" style="display:none">0</span>
+        </button>
+        <button class="tab-btn" data-tab="upload" id="tab-upload">
+          <span class="tab-icon">📷</span>
+          <span>上传笔记</span>
+        </button>
+        <button class="tab-btn" data-tab="search" id="tab-search">
+          <span class="tab-icon">🔍</span>
+          <span>搜索</span>
+        </button>
+        <button class="tab-btn" data-tab="library" id="tab-library">
+          <span class="tab-icon">📖</span>
+          <span>笔记库</span>
+        </button>
+      </nav>
+      <button class="notify-btn" id="notify-btn" title="发送飞书提醒">🔔</button>
+    </div>
+  </header>
+
+  <!-- 主内容区域 -->
+  <main class="main">
+
+    <!-- ===== Tab: 今日复习 ===== -->
+    <section class="tab-panel active" id="panel-review">
+      <div class="panel-header">
+        <h1 class="panel-title">今日复习</h1>
+        <p class="panel-sub" id="review-date"></p>
+      </div>
+
+      <!-- 无任务状态 -->
+      <div class="empty-state" id="review-empty" style="display:none">
+        <div class="empty-icon">🎉</div>
+        <h3>今天没有复习任务</h3>
+        <p>所有笔记已复习完成，继续保持！</p>
+      </div>
+
+      <!-- 加载状态 -->
+      <div class="loading-state" id="review-loading">
+        <div class="spinner"></div>
+        <p>正在加载复习任务…</p>
+      </div>
+
+      <!-- 闪卡区域 -->
+      <div class="flashcard-area" id="flashcard-area" style="display:none">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+          <span class="progress-text" id="progress-text">0 / 0</span>
+        </div>
+
+        <!-- 闪卡 -->
+        <div class="card-scene">
+          <div class="card" id="flash-card">
+            <div class="card-front" id="card-front">
+              <div class="card-label" id="card-label">单词</div>
+              <div class="card-question" id="card-question"></div>
+              <div class="card-hint" id="card-hint"></div>
+              <button class="btn btn-primary" id="btn-reveal">翻开答案 →</button>
+            </div>
+            <div class="card-back" id="card-back">
+              <div class="card-answer-wrap">
+                <div class="card-label">答案</div>
+                <div class="card-answer" id="card-answer"></div>
+                <div class="card-synonym" id="card-synonym"></div>
+              </div>
+              <div class="card-actions">
+                <button class="btn btn-danger" id="btn-wrong">😰 记错了</button>
+                <button class="btn btn-success" id="btn-ok">✅ 知道了</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 不知道按钮 -->
+        <div class="dontknow-row" id="dontknow-row">
+          <button class="btn btn-ghost" id="btn-dontknow">🤔 不认识，直接看答案</button>
+        </div>
+      </div>
+
+      <!-- 复习完成 -->
+      <div class="done-state" id="review-done" style="display:none">
+        <div class="done-icon">🌟</div>
+        <h3>本轮复习完成！</h3>
+        <p id="done-summary"></p>
+        <button class="btn btn-primary" onclick="App.startReview()">再复习一遍</button>
+      </div>
+    </section>
+
+    <!-- ===== Tab: 上传笔记 ===== -->
+    <section class="tab-panel" id="panel-upload">
+      <div class="panel-header">
+        <h1 class="panel-title">上传笔记</h1>
+        <p class="panel-sub">拍照上传英语笔记，AI 自动识别并结构化</p>
+      </div>
+
+      <div class="upload-area" id="upload-area">
+        <div class="upload-drop" id="upload-drop">
+          <div class="upload-icon">📷</div>
+          <p class="upload-text">拖拽图片到此处，或点击选择</p>
+          <p class="upload-sub">支持 JPG / PNG，最大 10MB</p>
+          <input type="file" id="file-input" accept="image/*" style="display:none" />
+          <button class="btn btn-outline" onclick="document.getElementById('file-input').click()">选择图片</button>
+        </div>
+
+        <!-- 预览 -->
+        <div class="upload-preview" id="upload-preview" style="display:none">
+          <img id="preview-img" src="" alt="预览" />
+          <div class="preview-actions">
+            <button class="btn btn-ghost" id="btn-reselect">重新选择</button>
+            <button class="btn btn-primary" id="btn-ocr">🤖 AI 识别</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- OCR 处理中 -->
+      <div class="ocr-loading" id="ocr-loading" style="display:none">
+        <div class="spinner"></div>
+        <p>DeepSeek AI 正在识别中，请稍候…</p>
+      </div>
+
+      <!-- 识别结果编辑 -->
+      <div class="ocr-result" id="ocr-result" style="display:none">
+        <h3 class="section-title">📝 识别结果（可编辑）</h3>
+
+        <div class="result-section">
+          <div class="result-header">
+            <span>📖 单词</span>
+            <button class="btn-icon" onclick="App.addWord()">＋ 添加</button>
+          </div>
+          <div id="words-list" class="items-list"></div>
+        </div>
+
+        <div class="result-section">
+          <div class="result-header">
+            <span>💬 短语</span>
+            <button class="btn-icon" onclick="App.addPhrase()">＋ 添加</button>
+          </div>
+          <div id="phrases-list" class="items-list"></div>
+        </div>
+
+        <div class="result-section">
+          <div class="result-header">
+            <span>📜 例句</span>
+            <button class="btn-icon" onclick="App.addSentence()">＋ 添加</button>
+          </div>
+          <div id="sentences-list" class="items-list"></div>
+        </div>
+
+        <div class="save-row">
+          <button class="btn btn-ghost" id="btn-discard">丢弃</button>
+          <button class="btn btn-success" id="btn-save">💾 保存到飞书</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Tab: 搜索 ===== -->
+    <section class="tab-panel" id="panel-search">
+      <div class="panel-header">
+        <h1 class="panel-title">搜索笔记</h1>
+      </div>
+      <div class="search-bar">
+        <input type="text" id="search-input" class="search-input" placeholder="输入英文或中文关键词…" autocomplete="off" />
+        <button class="btn btn-primary" id="btn-search">搜索</button>
+      </div>
+      <div id="search-results" class="notes-grid"></div>
+      <div class="empty-state" id="search-empty" style="display:none">
+        <div class="empty-icon">🔍</div>
+        <p>没有找到相关笔记</p>
+      </div>
+    </section>
+
+    <!-- ===== Tab: 笔记库 ===== -->
+    <section class="tab-panel" id="panel-library">
+      <div class="panel-header">
+        <h1 class="panel-title">笔记库</h1>
+        <p class="panel-sub" id="library-count"></p>
+      </div>
+      <div class="loading-state" id="library-loading">
+        <div class="spinner"></div>
+        <p>正在加载笔记…</p>
+      </div>
+      <div id="library-grid" class="notes-grid"></div>
+      <div class="empty-state" id="library-empty" style="display:none">
+        <div class="empty-icon">📖</div>
+        <h3>还没有笔记</h3>
+        <p>去上传第一张笔记吧！</p>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- 笔记详情弹窗 -->
+  <div class="modal-overlay" id="note-modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-title">笔记详情</h3>
+        <button class="modal-close" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+    </div>
+  </div>
+
+  <!-- Toast 通知 -->
+  <div class="toast" id="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
