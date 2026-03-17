@@ -260,6 +260,9 @@ const App = (() => {
     document.getElementById('progress-fill').style.width = '100%';
     document.getElementById('progress-text').textContent = `${total} / ${total}`;
     toast('🌟 本轮复习完成！', 'success');
+
+    // 触发飞书完成通知（异步，不影响页面）
+    fetch('/api/notify/complete', { method: 'POST' }).catch(() => {});
   }
 
   async function startReview() {

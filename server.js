@@ -307,55 +307,161 @@ app.get('/api/cron/notify', async (req, res) => {
       return res.json({ success: false, message: '飞书 Webhook 未配置' });
     }
 
-    // 获取今日未完成任务数
     const token = await getFeishuToken();
     const appToken = process.env.FEISHU_BASE_APP_TOKEN;
-    const tableId = process.env.FEISHU_REVIEW_TABLE_ID;
+    const session = req.query.session || 'morning';
 
     // 北京时间今日日期
     const now = new Date();
-    const bjDate = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    const today = bjDate.toISOString().split('T')[0];
+    const bjNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const today = bjNow.toISOString().split('T')[0];
 
-    let allRecords = [];
-    let pageToken = '';
-    while (true) {
-      const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=100${pageToken ? `&page_token=${pageToken}` : ''}`;
-      const r = await axios.get(url, { headers: feishuHeaders(token) });
-      const data = r.data.data;
-      allRecords = allRecords.concat(data.items || []);
-      if (!data.has_more) break;
-      pageToken = data.page_token;
+    // ---------- 早上提醒 ----------
+    if (session === 'morning') {
+      const reviewRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_REVIEW_TABLE_ID);
+      const pending = reviewRecords.filter(r => r.fields.scheduled_date === today && !r.fields.completed).length;
+
+      const text = pending > 0
+        ? `🌅 早上好！今天有 ${pending} 条笔记待复习\n💪 加油，坚持每天复习！\n👉 ${process.env.APP_URL || 'https://english-notes-review.onrender.com'}`
+        : `🌅 早上好！今天没有复习任务\n🎉 你的笔记都已复习完毕，继续保持！`;
+
+      await sendFeishuText(webhookUrl, text);
+      return res.json({ success: true, pending });
     }
 
-    const pendingTasks = allRecords.filter(item => {
-      const scheduled = item.fields.scheduled_date || '';
-      return scheduled === today && !item.fields.completed;
-    });
+    // ---------- 晚上提醒（有未完成才发）----------
+    if (session === 'evening') {
+      const reviewRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_REVIEW_TABLE_ID);
+      const pending = reviewRecords.filter(r => r.fields.scheduled_date === today && !r.fields.completed).length;
 
-    const pending = pendingTasks.length;
-    const session = req.query.session || 'morning'; // morning / evening
+      if (pending === 0) {
+        return res.json({ success: true, sent: false, message: '今日已全部完成' });
+      }
 
-    // 晚上提醒：只有还有未完成任务才发
-    if (session === 'evening' && pending === 0) {
-      return res.json({ success: true, sent: false, message: '今日已全部完成，无需提醒' });
+      const text = `🌙 晚上提醒：今天还有 ${pending} 条笔记未复习\n趁睡前完成吧～\n👉 ${process.env.APP_URL || 'https://english-notes-review.onrender.com'}`;
+      await sendFeishuText(webhookUrl, text);
+      return res.json({ success: true, pending });
     }
 
-    // 发送飞书通知
-    const emoji = session === 'morning' ? '🌅' : '🌙';
-    const timeLabel = session === 'morning' ? '早上' : '晚上';
-    const text = pending > 0
-      ? `${emoji} 英语复习${timeLabel}提醒（${today}）\n你今天还有 ${pending} 条笔记待复习，加油💪\n👉 ${process.env.APP_URL || 'https://english-notes-review.onrender.com'}`
-      : `${emoji} 英语复习提醒（${today}）\n今天暂无复习任务，继续保持！🎉`;
+    // ---------- 周报（每周日 23:00）----------
+    if (session === 'weekly') {
+      const noteRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_NOTES_TABLE_ID);
+      const reviewRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_REVIEW_TABLE_ID);
 
-    await axios.post(webhookUrl, {
-      msg_type: 'text',
-      content: { text }
-    });
+      // 本周范围（周一到今天）
+      const weekStart = new Date(bjNow);
+      weekStart.setDate(bjNow.getDate() - bjNow.getDay() + 1);
+      const weekStartStr = weekStart.toISOString().split('T')[0];
 
-    res.json({ success: true, sent: true, pending, session });
+      const newNotes = noteRecords.filter(r => (r.fields.date || '') >= weekStartStr);
+      const weekReviews = reviewRecords.filter(r => (r.fields.scheduled_date || '') >= weekStartStr);
+      const completed = weekReviews.filter(r => r.fields.completed);
+      const okCount = completed.filter(r => r.fields.result === 'ok').length;
+      const wrongCount = completed.filter(r => r.fields.result === 'wrong').length;
+      const unknownCount = completed.filter(r => r.fields.result === 'unknown').length;
+      const rate = completed.length > 0 ? Math.round((okCount / completed.length) * 100) : 0;
+
+      // 本周新增词汇统计
+      let totalWords = 0, totalPhrases = 0;
+      newNotes.forEach(n => {
+        totalWords += safeParseJSON(n.fields.words).length;
+        totalPhrases += safeParseJSON(n.fields.phrases).length;
+      });
+
+      const text = [
+        `📊 本周学习周报（${weekStartStr} ~ ${today}）`,
+        ``,
+        `📖 新增笔记：${newNotes.length} 条`,
+        `   📝 单词：${totalWords} 个  💬 短语：${totalPhrases} 个`,
+        ``,
+        `🔁 复习情况：`,
+        `   完成 ${completed.length} / ${weekReviews.length} 条`,
+        `   ✅ 知道：${okCount}  ❌ 记错：${wrongCount}  ❓ 不认识：${unknownCount}`,
+        `   🎯 正确率：${rate}%`,
+        ``,
+        rate >= 80 ? `🌟 本周表现优秀，继续冲！` :
+        rate >= 60 ? `💪 本周还不错，下周继续加油！` :
+                    `📚 本周有些遗忘，多复习几次吧～`,
+      ].join('\n');
+
+      await sendFeishuText(webhookUrl, text);
+      return res.json({ success: true, type: 'weekly', newNotes: newNotes.length, rate });
+    }
+
+    res.json({ success: false, message: '未知 session 类型' });
   } catch (error) {
     console.error('定时通知错误:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data?.msg || error.message });
+  }
+});
+
+// ==============================
+// API 路由：复习完成后发到飞书（由前端调用）
+// ==============================
+app.post('/api/notify/complete', async (req, res) => {
+  try {
+    const webhookUrl = process.env.FEISHU_WEBHOOK_URL;
+    if (!webhookUrl || webhookUrl.includes('your_webhook_token')) {
+      return res.json({ success: false });
+    }
+
+    const token = await getFeishuToken();
+    const appToken = process.env.FEISHU_BASE_APP_TOKEN;
+
+    const now = new Date();
+    const bjNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const today = bjNow.toISOString().split('T')[0];
+
+    // 获取今日已完成的复习记录
+    const reviewRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_REVIEW_TABLE_ID);
+    const todayDone = reviewRecords.filter(r => r.fields.scheduled_date === today && r.fields.completed);
+
+    if (todayDone.length === 0) {
+      return res.json({ success: false, message: '无今日完成记录' });
+    }
+
+    // 收集复习了哪些笔记，获取单词/短语内容
+    const noteIds = [...new Set(todayDone.map(r => r.fields.note_id).filter(Boolean))];
+    const noteRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_NOTES_TABLE_ID);
+    const targetNotes = noteRecords.filter(n => noteIds.includes(n.fields.note_id));
+
+    let wordLines = [], phraseLines = [];
+    targetNotes.forEach(n => {
+      safeParseJSON(n.fields.words).forEach(w => {
+        if (w.en) wordLines.push(`  • ${w.en}　${w.cn || ''}${w.synonym ? `（近义：${w.synonym}）` : ''}`);
+      });
+      safeParseJSON(n.fields.phrases).forEach(p => {
+        if (p.en) phraseLines.push(`  • ${p.en}　${p.cn || ''}`);
+      });
+    });
+
+    // 鼓励语随机
+    const encouragements = [
+      '太棒了！今天的复习任务全部完成 🎉',
+      '坚持就是胜利！又完成了一天的学习 💪',
+      '学习使我快乐！今天的词汇已入脑 🧠',
+      '每天一点点积累，英语越来越好 🌱',
+      '不积跬步，无以至千里。今天做到了！✨',
+    ];
+    const cheer = encouragements[Math.floor(Math.random() * encouragements.length)];
+
+    const lines = [cheer, ''];
+    if (wordLines.length > 0) {
+      lines.push(`📖 今日复习单词（${wordLines.length} 个）：`);
+      lines.push(...wordLines.slice(0, 20));
+      if (wordLines.length > 20) lines.push(`  ... 共 ${wordLines.length} 个`);
+    }
+    if (phraseLines.length > 0) {
+      lines.push('');
+      lines.push(`💬 今日复习短语（${phraseLines.length} 个）：`);
+      lines.push(...phraseLines.slice(0, 10));
+      if (phraseLines.length > 10) lines.push(`  ... 共 ${phraseLines.length} 个`);
+    }
+
+    await sendFeishuText(webhookUrl, lines.join('\n'));
+    res.json({ success: true });
+  } catch (error) {
+    console.error('完成通知错误:', error.response?.data || error.message);
     res.status(500).json({ error: error.response?.data?.msg || error.message });
   }
 });
@@ -367,6 +473,24 @@ function safeParseJSON(str) {
   if (!str) return [];
   if (Array.isArray(str)) return str;
   try { return JSON.parse(str); } catch { return []; }
+}
+
+async function fetchAllRecords(token, appToken, tableId) {
+  let allRecords = [];
+  let pageToken = '';
+  while (true) {
+    const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=100${pageToken ? `&page_token=${pageToken}` : ''}`;
+    const r = await axios.get(url, { headers: feishuHeaders(token) });
+    const data = r.data.data;
+    allRecords = allRecords.concat(data.items || []);
+    if (!data.has_more) break;
+    pageToken = data.page_token;
+  }
+  return allRecords;
+}
+
+async function sendFeishuText(webhookUrl, text) {
+  await axios.post(webhookUrl, { msg_type: 'text', content: { text } });
 }
 
 function getTodayStr() {
