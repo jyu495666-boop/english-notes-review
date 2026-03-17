@@ -115,7 +115,10 @@
     <section class="tab-panel" id="panel-upload">
       <div class="panel-header">
         <h1 class="panel-title">上传笔记</h1>
-        <p class="panel-sub">拍照上传英语笔记，AI 自动识别并结构化</p>
+        <div class="mode-tabs">
+          <button class="mode-tab active" id="mode-photo" onclick="App.switchMode('photo')">📷 拍照识别</button>
+          <button class="mode-tab" id="mode-text" onclick="App.switchMode('text')">✏️ 直接输入</button>
+        </div>
       </div>
 
       <div class="upload-area" id="upload-area">
@@ -134,6 +137,20 @@
             <button class="btn btn-ghost" id="btn-reselect">重新选择</button>
             <button class="btn btn-primary" id="btn-ocr">🤖 AI 识别</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 手动输入模式 -->
+      <div id="text-input-area" style="display:none">
+        <textarea id="manual-text" class="manual-textarea" placeholder="请将笔记内容粘贴或手动输入到这里...
+
+例如：
+backbone 主干
+backfire 适得其反
+address 演讲，讲话
+cope with 处理，应对" rows="12"></textarea>
+        <div class="save-row" style="margin-top:12px">
+          <button class="btn btn-primary" id="btn-parse-text">🤖 AI 解析</button>
         </div>
       </div>
 

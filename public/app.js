@@ -312,6 +312,7 @@ const App = (() => {
       resetUpload();
       document.getElementById('ocr-result').style.display = 'none';
     });
+    document.getElementById('btn-parse-text').addEventListener('click', parseManualText);
   }
 
   function resetUpload() {
@@ -696,5 +697,60 @@ const App = (() => {
   }
 
   // 暴露给 HTML onclick 使用的方法
-  return { addWord, addPhrase, addSentence, startReview, loadTodayReview };
+  // ============================================================
+  // 模式切换：拍照识别 / 直接输入
+  // ============================================================
+  function switchMode(mode) {
+    const photoMode = document.getElementById('upload-area');
+    const textMode = document.getElementById('text-input-area');
+    const btnPhoto = document.getElementById('mode-photo');
+    const btnText = document.getElementById('mode-text');
+
+    if (mode === 'photo') {
+      photoMode.style.display = 'block';
+      textMode.style.display = 'none';
+      btnPhoto.classList.add('active');
+      btnText.classList.remove('active');
+    } else {
+      photoMode.style.display = 'none';
+      textMode.style.display = 'block';
+      btnPhoto.classList.remove('active');
+      btnText.classList.add('active');
+    }
+    // 关闭已有结果
+    document.getElementById('ocr-result').style.display = 'none';
+    document.getElementById('ocr-loading').style.display = 'none';
+  }
+
+  async function parseManualText() {
+    const text = document.getElementById('manual-text').value.trim();
+    if (!text) { toast('请先输入笔记内容', 'error'); return; }
+
+    const btn = document.getElementById('btn-parse-text');
+    btn.disabled = true;
+    btn.textContent = '解析中…';
+    document.getElementById('ocr-loading').innerHTML = '<div class="spinner"></div><p>DeepSeek AI 正在解析笔记结构…</p>';
+    document.getElementById('ocr-loading').style.display = 'block';
+
+    try {
+      const data = await fetchJSON('/api/ocr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ocrText: text })
+      });
+      ocrResult = data.parsed;
+      document.getElementById('ocr-loading').style.display = 'none';
+      document.getElementById('ocr-result').style.display = 'block';
+      renderOCRResult(ocrResult);
+      toast('解析成功！请检查并编辑内容', 'success');
+    } catch (e) {
+      document.getElementById('ocr-loading').style.display = 'none';
+      toast('解析失败：' + e.message, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '🤖 AI 解析';
+    }
+  }
+
+  return { addWord, addPhrase, addSentence, startReview, loadTodayReview, switchMode, parseManualText };
 })();

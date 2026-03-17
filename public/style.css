@@ -691,6 +691,50 @@ body::after {
 /* ==========================================
    Responsive
    ========================================== */
+/* 模式切换 Tab */
+.mode-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+.mode-tab {
+  padding: 8px 18px;
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+}
+.mode-tab.active {
+  background: linear-gradient(135deg, rgba(109,93,255,0.2), rgba(59,130,246,0.15));
+  color: var(--accent-light);
+  border-color: rgba(109,93,255,0.4);
+}
+
+/* 手动输入文本框 */
+.manual-textarea {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 16px;
+  font-size: 0.9rem;
+  font-family: var(--font);
+  resize: vertical;
+  outline: none;
+  transition: var(--transition);
+  line-height: 1.7;
+}
+.manual-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.manual-textarea::placeholder { color: var(--text-muted); }
+
 @media (max-width: 700px) {
   .header-inner { padding: 0 16px; gap: 16px; }
   .tab-btn span:not(.tab-icon):not(.badge) { display: none; }
