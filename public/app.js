@@ -313,6 +313,11 @@ const App = (() => {
       document.getElementById('ocr-result').style.display = 'none';
     });
     document.getElementById('btn-parse-text').addEventListener('click', parseManualText);
+    document.getElementById('btn-raw-parse').addEventListener('click', parseRawText);
+    document.getElementById('btn-raw-cancel').addEventListener('click', () => {
+      document.getElementById('ocr-raw-area').style.display = 'none';
+      resetUpload();
+    });
   }
 
   function resetUpload() {
@@ -348,29 +353,43 @@ const App = (() => {
         }
       );
 
-      if (!text || !text.trim()) {
-        throw new Error('未能识别到文字，请确保图片清晰');
-      }
+      loadingEl.style.display = 'none';
 
-      // Step 2: 发给后端 DeepSeek 做结构化解析
-      const el = document.getElementById('ocr-progress-text');
-      if (el) el.textContent = 'DeepSeek AI 正在解析笔记结构…';
+      // Step 2: 展示原始文字，让用户编辑后再解析
+      const rawArea = document.getElementById('ocr-raw-area');
+      document.getElementById('ocr-raw-text').value = text.trim();
+      rawArea.style.display = 'block';
+    } catch (e) {
+      loadingEl.style.display = 'none';
+      document.getElementById('upload-preview').style.display = 'flex';
+      toast('识别失败：' + e.message, 'error');
+    }
+  }
 
+  async function parseRawText() {
+    const text = document.getElementById('ocr-raw-text').value.trim();
+    if (!text) { toast('文字内容为空', 'error'); return; }
+
+    document.getElementById('ocr-raw-area').style.display = 'none';
+    const loadingEl = document.getElementById('ocr-loading');
+    loadingEl.innerHTML = '<div class="spinner"></div><p>DeepSeek AI 正在解析笔记结构…</p>';
+    loadingEl.style.display = 'block';
+
+    try {
       const data = await fetchJSON('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ocrText: text })
       });
-
       ocrResult = data.parsed;
       loadingEl.style.display = 'none';
       document.getElementById('ocr-result').style.display = 'block';
       renderOCRResult(ocrResult);
-      toast('识别成功！请检查并编辑内容', 'success');
+      toast('解析成功！请检查并编辑内容', 'success');
     } catch (e) {
       loadingEl.style.display = 'none';
-      document.getElementById('upload-preview').style.display = 'flex';
-      toast('识别失败：' + e.message, 'error');
+      document.getElementById('ocr-raw-area').style.display = 'block';
+      toast('解析失败：' + e.message, 'error');
     }
   }
 
@@ -752,5 +771,5 @@ const App = (() => {
     }
   }
 
-  return { addWord, addPhrase, addSentence, startReview, loadTodayReview, switchMode, parseManualText };
+  return { addWord, addPhrase, addSentence, startReview, loadTodayReview, switchMode, parseManualText, parseRawText };
 })();

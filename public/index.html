@@ -160,6 +160,19 @@ cope with 处理，应对" rows="12"></textarea>
         <p>DeepSeek AI 正在识别中，请稍候…</p>
       </div>
 
+      <!-- 中间步骤：OCR原始文字编辑 -->
+      <div id="ocr-raw-area" style="display:none">
+        <div class="raw-header">
+          <span>📝 OCR 识别结果（可修改后再解析）</span>
+          <span class="raw-tip">识别有误？直接在下方编辑后点解析</span>
+        </div>
+        <textarea id="ocr-raw-text" class="manual-textarea" rows="10"></textarea>
+        <div class="save-row" style="margin-top:12px">
+          <button class="btn btn-ghost" id="btn-raw-cancel">重新拍照</button>
+          <button class="btn btn-primary" id="btn-raw-parse">🤖 AI 解析</button>
+        </div>
+      </div>
+
       <!-- 识别结果编辑 -->
       <div class="ocr-result" id="ocr-result" style="display:none">
         <h3 class="section-title">📝 识别结果（可编辑）</h3>
