@@ -298,6 +298,69 @@ app.post('/api/notify', async (req, res) => {
 });
 
 // ==============================
+// API 路由：定时任务触发接口（供 cron-job.org 调用）
+// ==============================
+app.get('/api/cron/notify', async (req, res) => {
+  try {
+    const webhookUrl = process.env.FEISHU_WEBHOOK_URL;
+    if (!webhookUrl || webhookUrl.includes('your_webhook_token')) {
+      return res.json({ success: false, message: '飞书 Webhook 未配置' });
+    }
+
+    // 获取今日未完成任务数
+    const token = await getFeishuToken();
+    const appToken = process.env.FEISHU_BASE_APP_TOKEN;
+    const tableId = process.env.FEISHU_REVIEW_TABLE_ID;
+
+    // 北京时间今日日期
+    const now = new Date();
+    const bjDate = new Date(now.getTime() + 8 * 60 * 60 * 1000);
+    const today = bjDate.toISOString().split('T')[0];
+
+    let allRecords = [];
+    let pageToken = '';
+    while (true) {
+      const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=100${pageToken ? `&page_token=${pageToken}` : ''}`;
+      const r = await axios.get(url, { headers: feishuHeaders(token) });
+      const data = r.data.data;
+      allRecords = allRecords.concat(data.items || []);
+      if (!data.has_more) break;
+      pageToken = data.page_token;
+    }
+
+    const pendingTasks = allRecords.filter(item => {
+      const scheduled = item.fields.scheduled_date || '';
+      return scheduled === today && !item.fields.completed;
+    });
+
+    const pending = pendingTasks.length;
+    const session = req.query.session || 'morning'; // morning / evening
+
+    // 晚上提醒：只有还有未完成任务才发
+    if (session === 'evening' && pending === 0) {
+      return res.json({ success: true, sent: false, message: '今日已全部完成，无需提醒' });
+    }
+
+    // 发送飞书通知
+    const emoji = session === 'morning' ? '🌅' : '🌙';
+    const timeLabel = session === 'morning' ? '早上' : '晚上';
+    const text = pending > 0
+      ? `${emoji} 英语复习${timeLabel}提醒（${today}）\n你今天还有 ${pending} 条笔记待复习，加油💪\n👉 ${process.env.APP_URL || 'https://english-notes-review.onrender.com'}`
+      : `${emoji} 英语复习提醒（${today}）\n今天暂无复习任务，继续保持！🎉`;
+
+    await axios.post(webhookUrl, {
+      msg_type: 'text',
+      content: { text }
+    });
+
+    res.json({ success: true, sent: true, pending, session });
+  } catch (error) {
+    console.error('定时通知错误:', error.response?.data || error.message);
+    res.status(500).json({ error: error.response?.data?.msg || error.message });
+  }
+});
+
+// ==============================
 // 工具函数
 // ==============================
 function safeParseJSON(str) {
