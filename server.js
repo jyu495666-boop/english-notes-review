@@ -164,10 +164,21 @@ app.post('/api/notes', async (req, res) => {
       { headers: feishuHeaders(token) }
     );
 
-    // 自动创建复习计划
-    await createReviewSchedule(token, fields.note_id, fields.date);
+    // 检查飞书返回码（HTTP 200 但 code != 0 也是失败）
+    if (r.data.code !== 0) {
+      return res.status(500).json({ error: `飞书错误 ${r.data.code}: ${r.data.msg}` });
+    }
 
-    res.json({ success: true, record_id: r.data.data.record.record_id, note_id: fields.note_id });
+    const recordId = r.data.data?.record?.record_id || '';
+
+    // 自动创建复习计划（失败不影响笔记保存）
+    try {
+      await createReviewSchedule(token, fields.note_id, fields.date);
+    } catch (schedErr) {
+      console.warn('创建复习计划失败（不影响笔记保存）:', schedErr.response?.data || schedErr.message);
+    }
+
+    res.json({ success: true, record_id: recordId, note_id: fields.note_id });
   } catch (error) {
     console.error('创建笔记错误:', error.response?.data || error.message);
     res.status(500).json({ error: error.response?.data?.msg || error.message });
