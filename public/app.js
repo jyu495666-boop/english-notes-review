@@ -327,29 +327,47 @@ const App = (() => {
   async function doOCR() {
     if (!selectedFile) return;
     document.getElementById('upload-preview').style.display = 'none';
-    document.getElementById('ocr-loading').style.display = 'block';
+    const loadingEl = document.getElementById('ocr-loading');
+    loadingEl.style.display = 'block';
+    loadingEl.innerHTML = '<div class="spinner"></div><p id="ocr-progress-text">正在加载 OCR 引擎…</p>';
 
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise((resolve, reject) => {
-        reader.onload = e => resolve(e.target.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(selectedFile);
-      });
+      // Step 1: Tesseract.js 识别图片文字
+      const { data: { text } } = await Tesseract.recognize(
+        selectedFile,
+        'eng+chi_sim',
+        {
+          logger: m => {
+            if (m.status === 'recognizing text') {
+              const pct = Math.round(m.progress * 100);
+              const el = document.getElementById('ocr-progress-text');
+              if (el) el.textContent = `正在识别图片文字… ${pct}%`;
+            }
+          }
+        }
+      );
+
+      if (!text || !text.trim()) {
+        throw new Error('未能识别到文字，请确保图片清晰');
+      }
+
+      // Step 2: 发给后端 DeepSeek 做结构化解析
+      const el = document.getElementById('ocr-progress-text');
+      if (el) el.textContent = 'DeepSeek AI 正在解析笔记结构…';
 
       const data = await fetchJSON('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageBase64: base64 })
+        body: JSON.stringify({ ocrText: text })
       });
 
       ocrResult = data.parsed;
-      document.getElementById('ocr-loading').style.display = 'none';
+      loadingEl.style.display = 'none';
       document.getElementById('ocr-result').style.display = 'block';
       renderOCRResult(ocrResult);
       toast('识别成功！请检查并编辑内容', 'success');
     } catch (e) {
-      document.getElementById('ocr-loading').style.display = 'none';
+      loadingEl.style.display = 'none';
       document.getElementById('upload-preview').style.display = 'flex';
       toast('识别失败：' + e.message, 'error');
     }

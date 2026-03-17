@@ -52,46 +52,13 @@ function feishuHeaders(token) {
 // ==============================
 app.post('/api/ocr', upload.single('image'), async (req, res) => {
   try {
-    let base64Image;
-    if (req.file) {
-      base64Image = req.file.buffer.toString('base64');
-    } else if (req.body.imageBase64) {
-      base64Image = req.body.imageBase64.replace(/^data:image\/\w+;base64,/, '');
-    } else {
-      return res.status(400).json({ error: '请提供图片文件或 base64 数据' });
+    // ocrText 由前端 Tesseract.js 识别后传入
+    const ocrText = req.body.ocrText;
+    if (!ocrText || !ocrText.trim()) {
+      return res.status(400).json({ error: 'OCR 文本不能为空，请重新识别' });
     }
 
-    const mimeType = req.file ? req.file.mimetype : 'image/jpeg';
-
-    // Step 1: DeepSeek Vision OCR —— 识别图片内容
-    const ocrRes = await axios.post('https://api.deepseek.com/chat/completions', {
-      model: 'deepseek-chat',
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` }
-            },
-            {
-              type: 'text',
-              text: `请识别这张英语学习笔记图片中的所有内容，以纯文本形式输出，保留原有的结构和分组。`
-            }
-          ]
-        }
-      ],
-      max_tokens: 2000
-    }, {
-      headers: {
-        Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    const ocrText = ocrRes.data.choices[0].message.content;
-
-    // Step 2: DeepSeek Chat —— 结构化解析为 JSON
+    // DeepSeek Chat —— 结构化解析为 JSON
     const parseRes = await axios.post('https://api.deepseek.com/chat/completions', {
       model: 'deepseek-chat',
       messages: [
@@ -122,7 +89,6 @@ app.post('/api/ocr', upload.single('image'), async (req, res) => {
     let parsed;
     try {
       let jsonStr = parseRes.data.choices[0].message.content.trim();
-      // 去掉可能的 markdown 代码块
       jsonStr = jsonStr.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
       parsed = JSON.parse(jsonStr);
     } catch (e) {
