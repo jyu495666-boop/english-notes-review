@@ -208,21 +208,14 @@ app.get('/api/review/today', async (req, res) => {
     const appToken = process.env.FEISHU_BASE_APP_TOKEN;
     const tableId = process.env.FEISHU_REVIEW_TABLE_ID;
 
-    const today = getTodayStr();
-    let allRecords = [];
-    let pageToken = '';
-    while (true) {
-      const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=100${pageToken ? `&page_token=${pageToken}` : ''}`;
-      const r = await axios.get(url, { headers: feishuHeaders(token) });
-      const data = r.data.data;
-      allRecords = allRecords.concat(data.items || []);
-      if (!data.has_more) break;
-      pageToken = data.page_token;
-    }
+    // 北京时间今天
+    const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+    const allRecords = await fetchAllRecords(token, appToken, tableId);
 
     const todayTasks = allRecords
       .filter(item => {
-        const scheduled = item.fields.scheduled_date || '';
+        // scheduled_date 存的是毫秒时间戳，先转为日期字符串再比较
+        const scheduled = feishuDateToStr(item.fields.scheduled_date);
         const completed = item.fields.completed;
         return scheduled === today && !completed;
       })
@@ -230,7 +223,7 @@ app.get('/api/review/today', async (req, res) => {
         id: item.record_id,
         note_id: item.fields.note_id,
         day_offset: item.fields.day_offset,
-        scheduled_date: item.fields.scheduled_date
+        scheduled_date: feishuDateToStr(item.fields.scheduled_date)
       }));
 
     res.json({ success: true, tasks: todayTasks });
