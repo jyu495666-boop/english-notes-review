@@ -10,6 +10,7 @@ const App = (() => {
   let allNotes = [];          // 从 /api/notes 加载的全部笔记
   let todayTasks = [];        // 今日复习任务（含笔记数据）
   let ocrResult = null;       // OCR 解析结果（待保存）
+  let dontKnowMode = false;   // 「不认识」模式标志，防止双击
   let flashState = {
     queue: [],                // [{noteId, type, index, recordId}]
     current: 0,
@@ -171,6 +172,12 @@ const App = (() => {
     // 重置翻转状态
     card.classList.remove('flipped');
     flashState.revealed = false;
+    dontKnowMode = false;
+    // 恢复按钮状态
+    const btnOk = document.getElementById('btn-ok');
+    const btnWrong = document.getElementById('btn-wrong');
+    btnOk.textContent = '✅ 知道了';
+    btnWrong.style.display = 'inline-flex';
 
     // 设置前面内容
     const typeMap = { word: '单词', phrase: '短语', sentence: '例句' };
@@ -240,13 +247,8 @@ const App = (() => {
 
   function handleDontKnow() {
     revealAnswer();
-    // 不知道 → 翻开答案后只有 "下一题" 按钮，替换 ok/wrong 逻辑
+    dontKnowMode = true;
     document.getElementById('btn-ok').textContent = '➡️ 下一题';
-    document.getElementById('btn-ok').onclick = () => {
-      document.getElementById('btn-ok').textContent = '✅ 知道了';
-      document.getElementById('btn-ok').onclick = () => handleResult('ok');
-      handleResult('unknown');
-    };
     document.getElementById('btn-wrong').style.display = 'none';
   }
 
@@ -680,7 +682,14 @@ const App = (() => {
 
     // 闪卡操作
     document.getElementById('btn-reveal').addEventListener('click', revealAnswer);
-    document.getElementById('btn-ok').addEventListener('click', () => handleResult('ok'));
+    document.getElementById('btn-ok').addEventListener('click', () => {
+      if (dontKnowMode) {
+        // 「不认识」模式下点「下一题」→ 记为 unknown
+        handleResult('unknown');
+      } else {
+        handleResult('ok');
+      }
+    });
     document.getElementById('btn-wrong').addEventListener('click', () => handleResult('wrong'));
     document.getElementById('btn-dontknow').addEventListener('click', handleDontKnow);
 
