@@ -487,7 +487,10 @@ function addDays(dateStr, days) {
 
 function feishuDateToStr(val) {
   if (!val) return '';
-  if (typeof val === 'number') return new Date(val).toISOString().split('T')[0];
+  if (typeof val === 'number') {
+    // 使用北京时间（Asia/Shanghai）转换，避免 UTC 导致日期差1天
+    return new Date(val).toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
+  }
   return String(val);
 }
 
