@@ -142,7 +142,7 @@ const App = (() => {
         return;
       }
 
-      flashState = { queue, current: 0, revealed: false, stats: { ok: 0, wrong: 0, unknown: 0 } };
+      flashState = { queue, current: 0, history: [], revealed: false, stats: { ok: 0, wrong: 0, unknown: 0 } };
       cardArea.style.display = 'block';
       renderFlashCard();
 
