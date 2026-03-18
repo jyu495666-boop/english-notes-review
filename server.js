@@ -106,34 +106,34 @@ app.post('/api/ocr', upload.single('image'), async (req, res) => {
 // API 路由：笔记 CRUD（飞书）
 // ==============================
 
-// 获取所有笔记
+// 获取所有笔记（按 group_id 聚合）
 app.get('/api/notes', async (req, res) => {
   try {
     const token = await getFeishuToken();
     const appToken = process.env.FEISHU_BASE_APP_TOKEN;
-    const tableId = process.env.FEISHU_NOTES_TABLE_ID;
+    const items = await fetchAllRecords(token, appToken, process.env.FEISHU_NOTES_TABLE_ID);
 
-    let allRecords = [];
-    let pageToken = '';
-    while (true) {
-      const url = `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records?page_size=100${pageToken ? `&page_token=${pageToken}` : ''}`;
-      const r = await axios.get(url, { headers: feishuHeaders(token) });
-      const data = r.data.data;
-      allRecords = allRecords.concat(data.items || []);
-      if (!data.has_more) break;
-      pageToken = data.page_token;
+    // 按 group_id 聚合成「笔记组」
+    const groups = {};
+    for (const item of items) {
+      const f = item.fields;
+      const gid = f.group_id || item.record_id;
+      if (!groups[gid]) {
+        groups[gid] = {
+          id: gid,
+          note_id: gid,
+          date: feishuDateToStr(f.date),
+          words: [], phrases: [], sentences: []
+        };
+      }
+      const type = f.type || 'word';
+      const entry = { en: f.word || '', cn: f.translation || '' };
+      if (type === 'word') { entry.synonym = f.synonym || ''; groups[gid].words.push(entry); }
+      else if (type === 'phrase') { groups[gid].phrases.push(entry); }
+      else if (type === 'sentence') { groups[gid].sentences.push(entry); }
     }
 
-    const notes = allRecords.map(item => ({
-      id: item.record_id,
-      note_id: item.fields.note_id || '',
-      date: feishuDateToStr(item.fields.date),
-      words: safeParseJSON(item.fields.words),
-      phrases: safeParseJSON(item.fields.phrases),
-      sentences: safeParseJSON(item.fields.sentences),
-      image_url: item.fields.image_url || ''
-    }));
-
+    const notes = Object.values(groups).sort((a, b) => (b.date > a.date ? 1 : -1));
     res.json({ success: true, notes });
   } catch (error) {
     console.error('获取笔记错误:', error.response?.data || error.message);
@@ -141,7 +141,7 @@ app.get('/api/notes', async (req, res) => {
   }
 });
 
-// 创建新笔记
+// 创建新笔记（每个词/短语/例句写一条飞书记录）
 app.post('/api/notes', async (req, res) => {
   try {
     const token = await getFeishuToken();
@@ -149,36 +149,48 @@ app.post('/api/notes', async (req, res) => {
     const tableId = process.env.FEISHU_NOTES_TABLE_ID;
 
     const { note_id, date, words, phrases, sentences } = req.body;
+    const groupId = note_id || `G${Date.now()}`;
     const dateStr = date || new Date().toISOString().split('T')[0];
-    const fields = {
-      note_id: note_id || `N${Date.now()}`,
-      date: strToFeishuDate(dateStr),
-      words: JSON.stringify(words || []),
-      phrases: JSON.stringify(phrases || []),
-      sentences: JSON.stringify(sentences || [])
-    };
+    const dateTs = strToFeishuDate(dateStr);
 
+    // 构建每个词的 record
+    const records = [];
+    for (const w of (words || [])) {
+      if (!w.en) continue;
+      records.push({ fields: { word: w.en, translation: w.cn || '', type: 'word', synonym: w.synonym || '', date: dateTs, group_id: groupId } });
+    }
+    for (const p of (phrases || [])) {
+      if (!p.en) continue;
+      records.push({ fields: { word: p.en, translation: p.cn || '', type: 'phrase', synonym: '', date: dateTs, group_id: groupId } });
+    }
+    for (const s of (sentences || [])) {
+      if (!s.en) continue;
+      records.push({ fields: { word: s.en, translation: s.cn || '', type: 'sentence', synonym: '', date: dateTs, group_id: groupId } });
+    }
+
+    if (records.length === 0) {
+      return res.status(400).json({ error: '没有可保存的内容' });
+    }
+
+    // 批量写入飞书
     const r = await axios.post(
-      `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records`,
-      { fields },
+      `https://open.feishu.cn/open-apis/bitable/v1/apps/${appToken}/tables/${tableId}/records/batch_create`,
+      { records },
       { headers: feishuHeaders(token) }
     );
 
-    // 检查飞书返回码（HTTP 200 但 code != 0 也是失败）
     if (r.data.code !== 0) {
       return res.status(500).json({ error: `飞书错误 ${r.data.code}: ${r.data.msg}` });
     }
 
-    const recordId = r.data.data?.record?.record_id || '';
-
-    // 自动创建复习计划（失败不影响笔记保存）
+    // 创建复习计划（按 groupId）
     try {
-      await createReviewSchedule(token, fields.note_id, dateStr);
+      await createReviewSchedule(token, groupId, dateStr);
     } catch (schedErr) {
-      console.warn('创建复习计划失败（不影响笔记保存）:', schedErr.response?.data || schedErr.message);
+      console.warn('创建复习计划失败:', schedErr.response?.data || schedErr.message);
     }
 
-    res.json({ success: true, record_id: recordId, note_id: fields.note_id });
+    res.json({ success: true, note_id: groupId, count: records.length });
   } catch (error) {
     console.error('创建笔记错误:', error.response?.data || error.message);
     res.status(500).json({ error: error.response?.data?.msg || error.message });
