@@ -230,6 +230,7 @@ body::after {
   cursor: pointer;
 }
 .card.flipped { transform: rotateY(180deg); }
+.card.no-transition { transition: none !important; }
 .card-front, .card-back {
   position: absolute;
   width: 100%;

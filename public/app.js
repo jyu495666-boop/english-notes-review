@@ -169,8 +169,13 @@ const App = (() => {
     const item = queue[current];
     const card = document.getElementById('flash-card');
 
-    // 重置翻转状态
+    // 重置翻转状态（加 no-transition 瞬间重置，避免切换时闪见答案）
+    card.classList.add('no-transition');
     card.classList.remove('flipped');
+    // 强制浏览器重排，然后下一帧再恢复动画
+    void card.offsetHeight;
+    requestAnimationFrame(() => card.classList.remove('no-transition'));
+
     flashState.revealed = false;
     dontKnowMode = false;
     // 恢复按钮状态
