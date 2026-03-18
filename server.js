@@ -389,35 +389,36 @@ app.post('/api/notify/complete', async (req, res) => {
 
     const token = await getFeishuToken();
     const appToken = process.env.FEISHU_BASE_APP_TOKEN;
+    const today = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).slice(0, 10);
 
-    const now = new Date();
-    const bjNow = new Date(now.getTime() + 8 * 60 * 60 * 1000);
-    const today = bjNow.toISOString().split('T')[0];
-
-    // 获取今日已完成的复习记录
+    // 获取今日已完成的复习记录（用 feishuDateToStr 转换时间戳再比较）
     const reviewRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_REVIEW_TABLE_ID);
-    const todayDone = reviewRecords.filter(r => r.fields.scheduled_date === today && r.fields.completed);
+    const todayDone = reviewRecords.filter(r =>
+      feishuDateToStr(r.fields.scheduled_date) === today && r.fields.completed
+    );
 
     if (todayDone.length === 0) {
       return res.json({ success: false, message: '无今日完成记录' });
     }
 
-    // 收集复习了哪些笔记，获取单词/短语内容
-    const noteIds = [...new Set(todayDone.map(r => r.fields.note_id).filter(Boolean))];
+    // 收集今日复习了哪些 group_id
+    const groupIds = [...new Set(todayDone.map(r => r.fields.note_id).filter(Boolean))];
+
+    // 从 notes 表获取这些 group 下的词汇（新 schema：每词一条记录）
     const noteRecords = await fetchAllRecords(token, appToken, process.env.FEISHU_NOTES_TABLE_ID);
-    const targetNotes = noteRecords.filter(n => noteIds.includes(n.fields.note_id));
+    const targetItems = noteRecords.filter(n => groupIds.includes(n.fields.group_id));
 
     let wordLines = [], phraseLines = [];
-    targetNotes.forEach(n => {
-      safeParseJSON(n.fields.words).forEach(w => {
-        if (w.en) wordLines.push(`  • ${w.en}　${w.cn || ''}${w.synonym ? `（近义：${w.synonym}）` : ''}`);
-      });
-      safeParseJSON(n.fields.phrases).forEach(p => {
-        if (p.en) phraseLines.push(`  • ${p.en}　${p.cn || ''}`);
-      });
+    targetItems.forEach(n => {
+      const type = n.fields.type || 'word';
+      const en = n.fields.word || '';
+      const cn = n.fields.translation || '';
+      const sy = n.fields.synonym || '';
+      if (!en) return;
+      if (type === 'word') wordLines.push(`  • ${en}　${cn}${sy ? `（近义：${sy}）` : ''}`);
+      else if (type === 'phrase') phraseLines.push(`  • ${en}　${cn}`);
     });
 
-    // 鼓励语随机
     const encouragements = [
       '太棒了！今天的复习任务全部完成 🎉',
       '坚持就是胜利！又完成了一天的学习 💪',

@@ -10,10 +10,11 @@ const App = (() => {
   let allNotes = [];          // 从 /api/notes 加载的全部笔记
   let todayTasks = [];        // 今日复习任务（含笔记数据）
   let ocrResult = null;       // OCR 解析结果（待保存）
-  let dontKnowMode = false;   // 「不认识」模式标志，防止双击
+  let dontKnowMode = false;   // 「不认识」模式标志
   let flashState = {
-    queue: [],                // [{noteId, type, index, recordId}]
+    queue: [],
     current: 0,
+    history: [],              // 已驚過的卡片历史（用于回上一题）
     revealed: false,
     stats: { ok: 0, wrong: 0, unknown: 0 }
   };
@@ -229,24 +230,31 @@ const App = (() => {
     document.getElementById('dontknow-row').style.display = 'none';
   }
 
-  async function handleResult(result) {
+  function handleResult(result) {
     // 统计
     flashState.stats[result] = (flashState.stats[result] || 0) + 1;
 
-    // 如果是最后一张 "不知道" 后直接翻开的，说明前面已经翻了
-    // 记录复习结果（每个 task 只记录一次，用 recordId 去重的话选第一次碰到时记录）
+    // 记录历史（上一题用）
+    flashState.history.push(flashState.current);
+    if (flashState.history.length > 10) flashState.history.shift();
+
+    // Fire-and-forget：不等待 API，立即跳题
     const item = flashState.queue[flashState.current];
     if (item) {
-      try {
-        await fetchJSON('/api/review/complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ record_id: item.recordId, result })
-        });
-      } catch (e) { /* 静默失败 */ }
+      fetchJSON('/api/review/complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: item.recordId, result })
+      }).catch(() => {});
     }
 
     flashState.current++;
+    renderFlashCard();
+  }
+
+  function goPrev() {
+    if (flashState.history.length === 0) return;
+    flashState.current = flashState.history.pop();
     renderFlashCard();
   }
 
@@ -785,5 +793,5 @@ const App = (() => {
     }
   }
 
-  return { addWord, addPhrase, addSentence, startReview, loadTodayReview, switchMode, parseManualText, parseRawText };
+  return { addWord, addPhrase, addSentence, startReview, loadTodayReview, switchMode, parseManualText, parseRawText, goPrev };
 })();
